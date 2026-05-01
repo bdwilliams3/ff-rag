@@ -56,3 +56,6 @@ data/
 # Logs
 *.log
 logs/
+
+# nfl_data_py cache
+/nfl_data/
