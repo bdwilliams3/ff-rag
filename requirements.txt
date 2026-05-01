@@ -1,0 +1,6 @@
+nfl-data-py
+pandas
+pyarrow
+rapidfuzz
+requests
+beautifulsoup4
