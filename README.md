@@ -86,20 +86,52 @@ FR-9 (combine + draft data)
 ## Local Setup
 
 ```bash
-# Start vector DB
-docker compose up -d
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-# Install Python dependencies
+# Install dependencies
 pip install -r requirements.txt
+```
 
-# Run data collection (after all epics complete)
-python scripts/collect_all.py
+---
 
-# Embed corpus
-python scripts/embed.py
+## Scripts
 
-# Query (draft time)
-./bin/query "should I draft Garrett Wilson at pick 22?"
+### `scripts/collect_stats.py` — FR-6: Historical Stats Backfill
+
+Pulls weekly and seasonal player stats (QB/RB/WR/TE) from 2012–2025 via nfl_data_py and writes Parquet files to `data/stats/`.
+
+```bash
+# Interactive — pauses for schema approval before writing files
+.venv/bin/python3 scripts/collect_stats.py
+
+# Unattended — auto-confirms both checkpoints and writes immediately
+.venv/bin/python3 scripts/collect_stats.py --auto-confirm
+```
+
+Output:
+- `data/stats/weekly/YYYY.parquet` — one file per season, game-level rows
+- `data/stats/seasonal/YYYY.parquet` — one file per season, season-level rows
+
+---
+
+### `scripts/peek.py` — Parquet Inspection Utility
+
+Inspect any Parquet file or directory. Shows schema, dtypes, null rates, row counts by season/position, and a sample.
+
+```bash
+# Inspect a single year
+.venv/bin/python3 scripts/peek.py data/stats/weekly/2024.parquet
+
+# Inspect all years combined
+.venv/bin/python3 scripts/peek.py data/stats/weekly/
+
+# Check if a column exists and see sample values
+.venv/bin/python3 scripts/peek.py data/stats/weekly/2024.parquet --search target_share
+
+# Filter rows to a specific player
+.venv/bin/python3 scripts/peek.py data/stats/weekly/2024.parquet --player "Tyreek Hill"
 ```
 
 ---

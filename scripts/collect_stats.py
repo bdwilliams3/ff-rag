@@ -10,7 +10,7 @@ from pathlib import Path
 import nfl_data_py as nfl
 import pandas as pd
 
-YEARS = list(range(2012, 2025))
+YEARS = list(range(2012, 2026))
 POSITIONS = ["QB", "RB", "WR", "TE"]
 
 SEASONAL_DIR = Path("data/stats/seasonal")
@@ -47,22 +47,37 @@ def confirm(prompt: str) -> None:
         sys.exit(0)
 
 
+def fetch_years(fn, label: str) -> pd.DataFrame:
+    """Pull year-by-year, skip any year nflverse hasn't published yet."""
+    frames = []
+    for yr in YEARS:
+        try:
+            frames.append(fn([yr]))
+            print(f"  {yr} OK")
+        except Exception as e:
+            print(f"  {yr} skipped ({e})")
+    if not frames:
+        raise RuntimeError(f"No data fetched for {label}")
+    return pd.concat(frames, ignore_index=True)
+
+
 def collect_weekly() -> pd.DataFrame:
-    print("\nPulling weekly stats 2012-2024 (this takes a minute)...")
-    df = nfl.import_weekly_data(years=YEARS)
+    print("\nPulling weekly stats year-by-year (skips unpublished seasons)...")
+    df = fetch_years(nfl.import_weekly_data, "weekly")
     df = df[df["position"].isin(POSITIONS)].reset_index(drop=True)
     return df
 
 
 def collect_seasonal(weekly: pd.DataFrame) -> pd.DataFrame:
     # Seasonal data has no position column — derive skill position player_ids from weekly
-    print("\nPulling seasonal stats 2012-2024...")
+    print("\nPulling seasonal stats year-by-year...")
     skill_ids = set(weekly["player_id"].unique())
     player_meta = (
         weekly[["player_id", "player_display_name", "position", "position_group"]]
         .drop_duplicates("player_id")
     )
-    df = nfl.import_seasonal_data(years=YEARS)
+
+    df = fetch_years(nfl.import_seasonal_data, "seasonal")
     df = df[df["player_id"].isin(skill_ids)].reset_index(drop=True)
     df = df.merge(player_meta, on="player_id", how="left")
     return df
