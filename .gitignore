@@ -1,0 +1,58 @@
+# Credentials & secrets
+.env
+.env.*
+*.env
+.suite
+*.suite
+secrets/
+credentials/
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Go
+bin/
+*.exe
+*.test
+vendor/
+
+# Data files (large, reproducible from collection scripts)
+data/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
