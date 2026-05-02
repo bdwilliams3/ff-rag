@@ -128,14 +128,15 @@ count = resolver.flush_unmatched()  # writes data/unmatched/resolver_unmatched_Y
 | 2 | `draft_year` + `draft_round` + `drafting_team` + `name` | 0.90 | Fuzzy last-name ≥ 85 score |
 | 3 | `name` + `college` + `position` | 0.75 | Fuzzy full-name ≥ 80; position family match (WR/TE treated as same family) |
 | 4 | `name` + `draft_year` | 0.50 | Exact last name + fuzzy first ≥ 70 |
-| 5 | `name` + `position` | 0.35 | Fuzzy full-name ≥ 90; for sources with no draft info (ADP) |
+| 5 | `name` + `position` | 0.35 | Fuzzy full-name ≥ 88 (after suffix strip); for sources with no draft info (ADP) |
 
 ### Reference table
 
-`data/athletic/combine_draft.parquet` — 2,545 rows covering:
+`data/athletic/combine_draft.parquet` — 4,436 rows covering three buckets:
 - All drafted QB/RB/WR/TE from 2000–2025 with a canonical gsis_id
 - UDFA combine attendees (no draft year, but attended the combine and made the league)
-- Combine measurables (forty, vertical, wt, etc.) where available — ~81% coverage
+- Modern-era UDFAs who never attended the combine but made the league (born after 1980) — covers players like Austin Ekeler, Adam Thielen
+- Combine measurables (forty, vertical, wt, etc.) where available — ~47% coverage across full table (higher for drafted players)
 - Players who skipped the combine (e.g. Jaylen Waddle) are included with NaN measurables
 
 Run `scripts/collect_combine.py` to regenerate. Combine data available from 2000 (nfl_data_py has no earlier data).
@@ -186,11 +187,11 @@ Builds the PlayerResolver reference table. Uses `import_players()` as the author
 .venv/bin/python3 scripts/collect_combine.py --auto-confirm
 ```
 
-Output: `data/athletic/combine_draft.parquet` — 2,545 rows, 19 columns.
+Output: `data/athletic/combine_draft.parquet` — 4,436 rows, 19 columns.
 
 Key design decisions:
 - **Flipped join**: players table is the base, combine data is left-joined — ensures players who skipped the combine (e.g. Jaylen Waddle, pick 6 in 2021) are still in the reference table.
-- **UDFA coverage**: skill position players with no draft year who attended the combine are included.
+- **Three-bucket base**: (1) drafted skill players 2000–2025, (2) UDFA combine attendees, (3) modern-era UDFAs who never attended the combine but made the league (born after 1980). This third bucket captures high-value UDFAs like Austin Ekeler and Adam Thielen who had no combine entry.
 - **Extended range**: 2000–2025 (nfl_data_py combine data starts at 2000). Covers ADP-era veterans like Antonio Brown (drafted 2010).
 - **Team normalization**: `draft_team` stored as full team name (e.g. `"Miami Dolphins"`) using `TEAM_MAP` from `player_resolver.py`.
 
@@ -223,22 +224,77 @@ Scrapes historical ADP from FantasyPros for standard, PPR, and half-PPR formats,
 Output: `data/adp/adp_historical.parquet` — 10,734 rows, 9 seasons × 3 formats.
 
 Notes:
-- 70.8% of rows resolve to a player_id via Tier 5 (confidence = 0.35). Unmatched rows are mostly pre-2000 draftees (veterans like Antonio Brown) not in the reference table.
+- 96.2% of rows resolve to a player_id via Tier 5 (confidence = 0.35). Remaining 3.8% are nickname aliases (e.g. "Hollywood Brown" for Marquise Brown) and pre-2000 era players not in the reference table.
 - Half-PPR data not available for 2017 (FantasyPros didn't publish it that year).
 - Scraper uses a 0.4s delay between requests to stay within polite crawl rate.
 - The `confidence` column is retained in the output — downstream joins should filter or weight by it.
 
 ---
 
-### `scripts/collect_adp.py` — FR-10: CFBD College Stats *(blocked — needs API key)*
+### `scripts/collect_college_stats.py` — FR-10: CFBD College Stats
 
-**Status: blocked.** CFBD API requires a free key. Register at [collegefootballdata.com](https://collegefootballdata.com) and add to `.env`:
+Pulls season-level passing, rushing, and receiving stats from the College Football Data API for all players in `combine_draft.parquet`. Resolves player IDs via PlayerResolver — Tier 3 (name + college, 0.75) when CFBD's team string matches nflverse's college string; Tier 4 (name + draft_year, 0.50) as fallback for transfer players whose nflverse college field carries multiple schools (e.g. `"USC; Pittsburgh"`, `"Wyoming; Reedley"`).
+
+```bash
+.venv/bin/python3 scripts/collect_college_stats.py
+.venv/bin/python3 scripts/collect_college_stats.py --auto-confirm   # unattended
+.venv/bin/python3 scripts/collect_college_stats.py --resume         # continue a previous run
+```
+
+Requires `CFBD_API_KEY` in `.env` (free key at [collegefootballdata.com](https://collegefootballdata.com)):
 
 ```
 CFBD_API_KEY=your_key_here
 ```
 
-The script will join to combine_draft via the `cfb_id` column (already populated from combine data). Planned output: `data/athletic/college_stats.parquet`.
+Output: `data/athletic/college_stats.parquet` — one row per player per college season.
+
+Key columns: `player_id`, `cfbd_player_id`, `player_name`, `college`, `season`, `pass_att`, `pass_comp`, `pass_yds`, `pass_td`, `pass_int`, `rush_att`, `rush_yds`, `rush_td`, `rec`, `rec_yds`, `rec_td`, `resolver_confidence`.
+
+Notes:
+- Pulls by year (one request per year per category ≈ 87 total) rather than per player — keeps API usage minimal on a free-tier key.
+- Resolution runs once per unique CFBD player after all years are fetched, using `last_college_season + 1` as the draft-year estimate. This lets Tier 4 catch transfer players whose nflverse college string is multi-school.
+- Progress is checkpointed after each year to `data/athletic/college_stats_checkpoint.parquet` — use `--resume` to continue across sessions.
+- Targets are not tracked at the NCAA level and are not returned by the CFBD API.
+
+---
+
+### `scripts/collect_coaching.py` — FR-14: Coaching Staff History
+
+Scrapes Pro Football History franchise/season pages for HC, OC, and DC roles from 2012–2025, expands staff assignments to one row per team per regular-season week, and preserves interim replacements from the first post-firing game week onward.
+
+```bash
+.venv/bin/python3 scripts/collect_coaching.py
+.venv/bin/python3 scripts/collect_coaching.py --auto-confirm
+```
+
+Output: `data/coaching/coaching_weekly.parquet` — 7,776 rows.
+
+Key columns: `season`, `week`, `team`, `team_name`, `gameday`, `had_game`, `hc_name`, `oc_name`, `dc_name`, `hc_interim`, `oc_interim`, `dc_interim`.
+
+Notes:
+- PFR was the original Jira source, but direct automated access is blocked by Cloudflare from this environment. Pro Football History provides the needed staff roles, interim labels, and firing-date context in scrapeable HTML.
+- Bye weeks are retained with `had_game = False` so the table has complete team-week coverage.
+- If a team has no official listed OC or DC, the value is stored as `No official OC listed` / `No official DC listed` rather than a null.
+
+---
+
+### `scripts/build_coordinator_profiles.py` — FR-15: Coaching Tendency Profiles
+
+Joins `coaching_weekly.parquet` to weekly player stats and builds separate offensive and defensive tendency tables. Offensive rows aggregate only the team's own production under the active OC. Defensive rows aggregate opponent production allowed under the active DC. Both tables include `hc_name` so head coach context is available on each line item.
+
+```bash
+.venv/bin/python3 scripts/build_coordinator_profiles.py
+.venv/bin/python3 scripts/build_coordinator_profiles.py --auto-confirm
+```
+
+Outputs:
+- `data/coaching/offensive_coordinator_profiles.parquet` — 422 OC/team-season rows
+- `data/coaching/defensive_coordinator_profiles.parquet` — 422 DC/team-season rows
+
+Offensive metrics include pass rate, run rate, games coached, pass/rush yards, WR/TE/RB target share, WR1 target share, WR2 target share, TE receiving yards, and RB carries.
+
+Defensive metrics include pass attempts/yards against, rush attempts/yards against, targets/receptions/receiving yards allowed, WR/TE/RB target share allowed, TE receiving yards allowed, and RB carries allowed.
 
 ---
 
@@ -257,7 +313,7 @@ Datasets available once collected:
 - Athletic — Combine & Draft
 - Injuries
 - ADP — Historical
-- Coaching — Weekly / Coordinator Profiles *(not yet collected)*
+- Coaching — Weekly / Offensive Profiles / Defensive Profiles
 - League Winners *(not yet collected)*
 
 ---
@@ -298,8 +354,10 @@ All Parquet files are gitignored — large and reproducible from collection scri
 | `data/athletic/combine_draft.parquet` | Combine measurables + draft data 2000–2025 | ✅ Collected |
 | `data/injuries/YYYY.parquet` | Weekly injury designations 2012–2025 | ✅ Collected |
 | `data/adp/adp_historical.parquet` | FantasyPros ADP std/PPR/half-PPR 2017–2025 | ✅ Collected |
-| `data/athletic/college_stats.parquet` | CFBD college stats | ⏳ Blocked (needs CFBD key) |
-| `data/coaching/` | HC/OC/DC weekly + coordinator profiles | ⏳ Not started |
+| `data/athletic/college_stats.parquet` | CFBD college stats by player × season | ⏳ Pending first run |
+| `data/coaching/coaching_weekly.parquet` | HC/OC/DC per team-week, including interim changes | ✅ Collected |
+| `data/coaching/offensive_coordinator_profiles.parquet` | OC offensive tendency profiles by team-season, with HC context | ✅ Collected |
+| `data/coaching/defensive_coordinator_profiles.parquet` | DC allowed-production profiles by team-season, with HC context | ✅ Collected |
 | `data/winners/` | League winner roster frequency | ⏳ Not started |
 | `data/unmatched/` | PlayerResolver unmatched records for manual review | Auto-generated |
 
@@ -316,8 +374,9 @@ Project: `FR` at [aispm.atlassian.net](https://aispm.atlassian.net). Credentials
 | FR-13 | PlayerResolver utility | 🔍 Review |
 | FR-21 | Player injury history | 🔍 Review |
 | FR-16 | FantasyPros ADP scraper | 🔍 Review |
-| FR-10 | CFBD college stats | ⏳ Blocked (CFBD API key) |
-| FR-14 | PFR coaching scraper (HC/OC/DC) | ⏳ Not started |
+| FR-10 | CFBD college stats | 🔄 In Progress |
+| FR-14 | Coaching scraper (HC/OC/DC) | 🔍 Review |
+| FR-15 | Coaching impact formula | 🔍 Review |
 | FR-17 | League winner frequency (Sleeper + BBM) | ⏳ Not started |
 | FR-25 | PFR 2025 season stats backfill | ⏳ Not started |
 | FR-11 | Prospect confidence score formula | ⏳ Deferred |

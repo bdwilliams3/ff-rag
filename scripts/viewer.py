@@ -12,13 +12,15 @@ app = Flask(__name__)
 DATA_ROOT = Path("data")
 
 DATASETS = {
-    "stats/weekly":    "Stats — Weekly",
-    "stats/seasonal":  "Stats — Seasonal",
-    "athletic/combine_draft": "Athletic — Combine & Draft",
+    "stats/weekly":    "Weekly Stats",
+    "stats/seasonal":  "Seasonal Stats",
+    "athletic/combine_draft":  "Athletic Profiles",
+    "athletic/college_stats":  "College Stats",
     "injuries":        "Injuries",
-    "coaching/coaching_weekly":        "Coaching — Weekly",
-    "coaching/coordinator_profiles":   "Coaching — Coordinator Profiles",
-    "adp/adp_historical":              "ADP — Historical",
+    "coaching/coaching_weekly":                  "Coaching Weekly",
+    "coaching/offensive_coordinator_profiles":   "OC Profiles",
+    "coaching/defensive_coordinator_profiles":   "DC Profiles",
+    "adp/adp_historical":              "Historical ADP",
     "winners/league_winner_frequency": "League Winners",
 }
 
