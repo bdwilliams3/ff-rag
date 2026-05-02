@@ -225,6 +225,7 @@ Output: `data/adp/adp_historical.parquet` — 10,734 rows, 9 seasons × 3 format
 
 Notes:
 - 96.2% of rows resolve to a player_id via Tier 5 (confidence = 0.35). Remaining 3.8% are nickname aliases (e.g. "Hollywood Brown" for Marquise Brown) and pre-2000 era players not in the reference table.
+- The canonical `team` column is inferred from local nflverse weekly stats by `player_id + season`, with 2025 partial fallback from injury reports. FantasyPros historical team labels are intentionally ignored because they are sparse and can show current/latest team rather than the historical ADP-season team.
 - Half-PPR data not available for 2017 (FantasyPros didn't publish it that year).
 - Scraper uses a 0.4s delay between requests to stay within polite crawl rate.
 - The `confidence` column is retained in the output — downstream joins should filter or weight by it.
