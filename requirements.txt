@@ -5,3 +5,6 @@ rapidfuzz
 requests
 beautifulsoup4
 fastembed
+openai
+fastapi
+uvicorn

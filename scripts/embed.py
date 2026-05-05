@@ -82,8 +82,6 @@ IMPORTANT_COLUMNS = {
         "receptions",
         "receiving_yards",
         "receiving_tds",
-        "target_share",
-        "air_yards_share",
         "fantasy_points",
         "fantasy_points_ppr",
     ],
@@ -247,6 +245,24 @@ IMPORTANT_COLUMNS = {
         "confidence_weight",
         "resolver_confidence",
     ],
+    "nfl_schedule_2026": [
+        "season",
+        "week",
+        "gameday",
+        "team",
+        "opponent_team",
+        "home_away",
+        "div_game",
+        "roof",
+        "surface",
+        "stadium",
+        "location",
+        "spread_line",
+        "away_qb_name",
+        "home_qb_name",
+        "away_coach",
+        "home_coach",
+    ],
 }
 
 
@@ -279,6 +295,11 @@ DATASETS = [
         "fantasypros_championship_rosters",
         DATA_DIR / "winners" / "fantasypros_championship_rosters.parquet",
         "player-season-source",
+    ),
+    (
+        "nfl_schedule_2026",
+        DATA_DIR / "schedule" / "nfl_schedule_2026.parquet",
+        "team-game",
     ),
 ]
 
@@ -367,6 +388,7 @@ def row_key(row: pd.Series, source: str, index: int) -> str:
         "salary_cap": ["season"],
         "league_winner_frequency": ["player_id", "season", "league_type", "scoring_format"],
         "fantasypros_championship_rosters": ["player_name", "season", "source_label"],
+        "nfl_schedule_2026": ["game_id", "team"],
     }
     parts = []
     for column in columns_by_source[source]:
@@ -399,6 +421,7 @@ def format_row(source: str, row: pd.Series) -> str:
         "salary_cap": "NFL salary cap season context",
         "league_winner_frequency": "Fantasy league winner frequency",
         "fantasypros_championship_rosters": "FantasyPros championship roster note",
+        "nfl_schedule_2026": "2026 NFL regular season schedule",
     }
     parts = []
     for column in IMPORTANT_COLUMNS[source]:
@@ -406,7 +429,28 @@ def format_row(source: str, row: pd.Series) -> str:
             value = display_value(row[column])
             if value:
                 parts.append(f"{column}: {value}")
+    if source == "seasonal_stats":
+        parts.extend(seasonal_share_parts(row))
     return f"{labels[source]}. " + "; ".join(parts)
+
+
+def seasonal_share_parts(row: pd.Series) -> list[str]:
+    """nflverse seasonal share fields are sums of weekly shares, not season rates."""
+    games = clean_value(row.get("games"))
+    if not games:
+        return []
+
+    parts = []
+    for source_column, output_column in [
+        ("target_share", "avg_weekly_target_share"),
+        ("air_yards_share", "avg_weekly_air_yards_share"),
+    ]:
+        value = clean_value(row.get(source_column))
+        if value is None:
+            continue
+        avg_value = float(value) / float(games)
+        parts.append(f"{output_column}: {display_value(avg_value)}")
+    return parts
 
 
 def read_parquet(path: Path) -> pd.DataFrame:
@@ -657,6 +701,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, help="Embed only the first N rows from each dataset")
     parser.add_argument("--recreate", action="store_true", help="Delete and recreate the collection first")
     parser.add_argument("--smoke-only", action="store_true", help="Run only the Justin Jefferson smoke search")
+    parser.add_argument("--source", help="Comma-separated data_source names to embed")
     parser.add_argument(
         "--provider",
         choices=["ollama", "fastembed", "fastembed-bge"],
@@ -685,8 +730,11 @@ def main() -> None:
             smoke_test(embedder)
             return
 
+        selected_sources = set(parse_source_filter(args.source))
         total = 0
         for source, path, grain in DATASETS:
+            if selected_sources and source not in selected_sources:
+                continue
             if not path.exists():
                 print(f"{source}: skipped missing path {path}", file=sys.stderr)
                 continue
@@ -698,6 +746,17 @@ def main() -> None:
     except requests.HTTPError as exc:
         body = exc.response.text if exc.response is not None else ""
         raise SystemExit(f"HTTP error: {exc}\n{body}") from exc
+
+
+def parse_source_filter(value: str | None) -> list[str]:
+    if not value:
+        return []
+    available = {source for source, _, _ in DATASETS}
+    selected = [source.strip() for source in value.split(",") if source.strip()]
+    unknown = sorted(set(selected) - available)
+    if unknown:
+        raise SystemExit(f"Unknown data_source in --source: {', '.join(unknown)}")
+    return selected
 
 
 if __name__ == "__main__":

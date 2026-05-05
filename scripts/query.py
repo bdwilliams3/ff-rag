@@ -71,7 +71,7 @@ def embed_query(model: TextEmbedding, query: str) -> list[float]:
 def search_qdrant(vector: list[float], qdrant_filter: dict[str, Any] | None, top: int) -> list[dict[str, Any]]:
     body: dict[str, Any] = {
         "vector": vector,
-        "limit": max(top * 8, top),
+        "limit": top * 8,
         "with_payload": True,
     }
     if qdrant_filter:
@@ -132,9 +132,6 @@ def result_item(point: dict[str, Any]) -> dict[str, Any]:
         "league_type",
         "coordinator",
         "head_coach",
-        "grain",
-        "source_path",
-        "row_key",
     ]:
         if key in payload:
             value = payload[key]

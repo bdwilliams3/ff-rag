@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FF RAG Draft Advisor</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="chat">
+        <header class="topbar">
+          <div>
+            <h1>FF RAG Draft Advisor</h1>
+            <p id="status">Loading</p>
+          </div>
+          <div class="controls">
+            <select id="position">
+              <option value="">All positions</option>
+              <option>QB</option>
+              <option>RB</option>
+              <option>WR</option>
+              <option>TE</option>
+            </select>
+            <input id="seasonMin" type="number" placeholder="Min season" />
+            <input id="seasonMax" type="number" placeholder="Max season" />
+            <input id="source" type="text" placeholder="data_source filter" />
+            <input id="top" type="number" min="1" max="40" value="14" />
+          </div>
+        </header>
+
+        <div id="messages" class="messages"></div>
+
+        <form id="chatForm" class="composer">
+          <textarea
+            id="message"
+            rows="5"
+            placeholder="Ask a long draft question, compare players, request a ranking, or ask to email a result to ant, bd, or nick."
+          ></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -43,6 +43,7 @@ sys.path.insert(0, ".")
 
 import pandas as pd
 import requests
+import nfl_data_py as nfl
 from utils.player_resolver import PlayerResolver
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,8 @@ CHECKPOINT_PATH = Path("data/athletic/college_stats_checkpoint.parquet")
 YEARS_DONE_PATH = Path("data/athletic/college_stats_years_done.json")
 
 YEARS           = list(range(1997, 2026))
+CURRENT_DRAFT_YEAR = 2026
+POSITIONS       = ("QB", "RB", "WR", "TE")
 STAT_CATEGORIES = ["passing", "rushing", "receiving"]
 REQUEST_DELAY   = 0.5
 BASE_URL        = "https://api.collegefootballdata.com"
@@ -154,6 +157,52 @@ def empty_stat_row(cfbd_id, name, team, position, season) -> dict:
     return row
 
 
+def load_current_draft_targets() -> pd.DataFrame:
+    """Build a target table for rookies not yet present in combine_draft.parquet."""
+    try:
+        picks = nfl.import_draft_picks([CURRENT_DRAFT_YEAR])
+        combine = nfl.import_combine_data(years=[CURRENT_DRAFT_YEAR], positions=list(POSITIONS))
+    except Exception as exc:
+        print(f"Could not load {CURRENT_DRAFT_YEAR} draft/combine targets: {exc}")
+        return pd.DataFrame()
+
+    picks = picks[
+        picks["season"].eq(CURRENT_DRAFT_YEAR)
+        & picks["position"].isin(POSITIONS)
+    ].copy()
+    if picks.empty:
+        return pd.DataFrame()
+
+    picks["player_id"] = picks["gsis_id"].fillna(picks["pfr_player_id"]).fillna(picks["cfb_player_id"])
+    picks = picks.rename(
+        columns={
+            "pfr_player_name": "player_name",
+            "cfb_player_id": "cfb_id",
+            "season": "draft_year",
+        }
+    )
+
+    if not combine.empty:
+        combine_by_pfr = (
+            combine.rename(columns={"pfr_id": "pfr_player_id", "cfb_id": "combine_cfb_id"})
+            [["pfr_player_id", "combine_cfb_id"]]
+            .dropna(subset=["combine_cfb_id"])
+            .drop_duplicates("pfr_player_id")
+        )
+        combine_by_name = (
+            combine.rename(columns={"player_name": "player_name", "cfb_id": "combine_cfb_id_by_name"})
+            [["player_name", "combine_cfb_id_by_name"]]
+            .dropna(subset=["combine_cfb_id_by_name"])
+            .drop_duplicates("player_name")
+        )
+        picks = picks.merge(combine_by_pfr, on="pfr_player_id", how="left")
+        picks = picks.merge(combine_by_name, on="player_name", how="left")
+        picks["cfb_id"] = picks["cfb_id"].fillna(picks["combine_cfb_id"])
+        picks["cfb_id"] = picks["cfb_id"].fillna(picks["combine_cfb_id_by_name"])
+
+    return picks[["player_id", "player_name", "position", "college", "draft_year", "cfb_id"]].dropna(subset=["player_id"])
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -163,8 +212,10 @@ def main() -> None:
     headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
 
     combine           = pd.read_parquet(COMBINE_PATH)
-    target_player_ids = set(combine["player_id"].dropna())
-    cfb_player_ids    = set(combine[combine["cfb_id"].notna()]["player_id"].dropna())
+    current_targets   = load_current_draft_targets()
+    reference         = pd.concat([combine, current_targets], ignore_index=True, sort=False)
+    target_player_ids = set(reference["player_id"].dropna())
+    cfb_player_ids    = set(reference[reference["cfb_id"].notna()]["player_id"].dropna())
 
     # Slug index for Phase B recovery. Two keys per combine row to bridge name
     # variants:
@@ -177,7 +228,7 @@ def main() -> None:
     # Collisions on either key are stored as a list and disambiguated by
     # draft_year proximity at lookup time.
     slug_index: dict[str, list[tuple]] = {}
-    for _, row in combine[combine["cfb_id"].notna()].iterrows():
+    for _, row in reference[reference["cfb_id"].notna()].iterrows():
         entry    = (row["player_id"], row.get("draft_year"))
         cfb_stem = str(row["cfb_id"]).rsplit("-", 1)[0]
         slug_index.setdefault(cfb_stem, []).append(entry)
@@ -186,7 +237,9 @@ def main() -> None:
         if name_slug and name_slug != cfb_stem:
             slug_index.setdefault(name_slug, []).append(entry)
 
-    print(f"Combine table: {len(combine)} players total, {len(cfb_player_ids)} with cfb_id, "
+    print(f"Combine table: {len(combine)} players total; "
+          f"{len(current_targets)} current draft targets; "
+          f"{len(cfb_player_ids)} reference players with cfb_id, "
           f"{len(slug_index)} unique slug stems")
 
     # Load checkpoint if resuming
