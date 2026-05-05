@@ -22,6 +22,7 @@ DATASETS = {
     "coaching/defensive_coordinator_profiles":   "DC Profiles",
     "adp/adp_historical":              "Historical ADP",
     "winners/league_winner_frequency": "League Winners",
+    "salaries/player_salaries":        "Player Salaries",
 }
 
 PAGE_SIZE = 100

@@ -1,5 +1,5 @@
 """
-FR-16: FantasyPros historical ADP — standard, PPR, half-PPR, 2017-present.
+FR-16: FantasyPros historical ADP — standard, PPR, half-PPR, 2012-present.
 Scrapes overall ADP pages, resolves player_id via PlayerResolver (Tier 5).
 Run: .venv/bin/python3 scripts/collect_adp.py [--auto-confirm]
 """
@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from utils.player_resolver import PlayerResolver
 
-YEARS = list(range(2017, 2026))
+YEARS = list(range(2012, 2026))
 FORMATS = {
     "std":      "https://www.fantasypros.com/nfl/adp/overall.php",
     "ppr":      "https://www.fantasypros.com/nfl/adp/ppr-overall.php",

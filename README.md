@@ -22,6 +22,7 @@ Data Collection (Python)
   ├── CFBD API                    → college stats
   ├── PFR scraper                 → coaching history, 2025 stats
   ├── FantasyPros scraper         → ADP
+  ├── nflverse / OverTheCap       → player salaries, cap numbers, cash paid
   └── Sleeper API + BBM           → league winner frequency
 
 PlayerResolver (Python)
@@ -51,6 +52,7 @@ LLM Integration
 | [FR-3](https://aispm.atlassian.net/browse/FR-3) | Coaching History | HC/OC/DC per team per week, scheme tendency metrics |
 | [FR-4](https://aispm.atlassian.net/browse/FR-4) | ADP | FantasyPros historical ADP by player/format/year |
 | [FR-5](https://aispm.atlassian.net/browse/FR-5) | League Winners | Championship roster frequency via Sleeper + best ball tournaments |
+| [FR-26](https://aispm.atlassian.net/browse/FR-26) | Player Salaries | Historical salary/cap/cash data by player-season |
 | [FR-12](https://aispm.atlassian.net/browse/FR-12) | Embed Utilities | PlayerResolver, Docker vector DB, embedding pipeline |
 | [FR-19](https://aispm.atlassian.net/browse/FR-19) | LLM Retrieval | Go query script, LLM hookup |
 
@@ -214,19 +216,19 @@ Key columns: `player_id`, `full_name`, `position`, `season`, `week`, `game_type`
 
 ### `scripts/collect_adp.py` — FR-16: FantasyPros ADP
 
-Scrapes historical ADP from FantasyPros for standard, PPR, and half-PPR formats, 2017–present. Resolves player IDs via PlayerResolver Tier 5 (name + position).
+Scrapes historical ADP from FantasyPros for standard, PPR, and half-PPR formats, 2012–present. Resolves player IDs via PlayerResolver Tier 5 (name + position).
 
 ```bash
 .venv/bin/python3 scripts/collect_adp.py
 .venv/bin/python3 scripts/collect_adp.py --auto-confirm
 ```
 
-Output: `data/adp/adp_historical.parquet` — 10,734 rows, 9 seasons × 3 formats.
+Output: `data/adp/adp_historical.parquet` — 14,015 rows across 2012–2025.
 
 Notes:
-- 96.2% of rows resolve to a player_id via Tier 5 (confidence = 0.35). Remaining 3.8% are nickname aliases (e.g. "Hollywood Brown" for Marquise Brown) and pre-2000 era players not in the reference table.
+- 96.3% of rows resolve to a player_id via Tier 5 (confidence = 0.35). Remaining rows are nickname aliases (e.g. "Hollywood Brown" for Marquise Brown), pre-2000 era players not in the reference table, and some source naming differences.
 - The canonical `team` column is inferred from local nflverse weekly stats by `player_id + season`, with 2025 partial fallback from injury reports. FantasyPros historical team labels are intentionally ignored because they are sparse and can show current/latest team rather than the historical ADP-season team.
-- Half-PPR data not available for 2017 (FantasyPros didn't publish it that year).
+- Standard and PPR are available back to 2012. Half-PPR is available from 2018 onward; FantasyPros returns no report for 2012–2017.
 - Scraper uses a 0.4s delay between requests to stay within polite crawl rate.
 - The `confidence` column is retained in the output — downstream joins should filter or weight by it.
 
@@ -299,6 +301,29 @@ Defensive metrics include pass attempts/yards against, rush attempts/yards again
 
 ---
 
+### `scripts/collect_salaries.py` — FR-27: Historical Player Salaries
+
+Pulls nflverse historical contracts sourced from OverTheCap, flattens the nested annual cap/cash rows, aggregates to one row per player-season, and writes salary-cap context for era normalization.
+
+```bash
+.venv/bin/python3 scripts/collect_salaries.py
+.venv/bin/python3 scripts/collect_salaries.py --auto-confirm
+```
+
+Outputs:
+- `data/salaries/player_salaries.parquet` — 33,460 player-season rows for 2012–2025
+- `data/salaries/salary_cap_by_season.parquet` — official base cap plus aggregate player salary/cap totals by season
+
+Key columns: `player_id`, `player_name`, `position`, `season`, `team`, `base_salary_millions`, `cap_number_millions`, `cash_paid_millions`, `cap_percent_of_league_cap`, `official_base_salary_cap_millions`, and source metadata.
+
+Notes:
+- Monetary values are stored in millions of USD, matching the nflverse/OverTheCap source.
+- The output keeps broad NFL salary coverage across all positions, not only QB/RB/WR/TE.
+- `player_id` comes from the source `gsis_id`; about 2% of salary rows lack a player ID in the source.
+- The current source covers 2,677 of 4,510 local FF RAG player IDs. Missing rows are source gaps, mostly older or lower-salary historical players, not inferred salaries.
+
+---
+
 ### `scripts/viewer.py` — Local Data Viewer (localhost:8080)
 
 Browse any collected dataset in your browser. Supports year filtering, player name search, and pagination.
@@ -315,7 +340,8 @@ Datasets available once collected:
 - Injuries
 - ADP — Historical
 - Coaching — Weekly / Offensive Profiles / Defensive Profiles
-- League Winners *(not yet collected)*
+- League Winners
+- Salaries — Player Salaries / Salary Cap
 
 ---
 
@@ -354,12 +380,14 @@ All Parquet files are gitignored — large and reproducible from collection scri
 | `data/stats/seasonal/YYYY.parquet` | Seasonal player stats 2012–2025 | ✅ Collected |
 | `data/athletic/combine_draft.parquet` | Combine measurables + draft data 2000–2025 | ✅ Collected |
 | `data/injuries/YYYY.parquet` | Weekly injury designations 2012–2025 | ✅ Collected |
-| `data/adp/adp_historical.parquet` | FantasyPros ADP std/PPR/half-PPR 2017–2025 | ✅ Collected |
+| `data/adp/adp_historical.parquet` | FantasyPros ADP std/PPR/half-PPR 2012–2025 | ✅ Collected |
 | `data/athletic/college_stats.parquet` | CFBD college stats by player × season | ⏳ Pending first run |
 | `data/coaching/coaching_weekly.parquet` | HC/OC/DC per team-week, including interim changes | ✅ Collected |
 | `data/coaching/offensive_coordinator_profiles.parquet` | OC offensive tendency profiles by team-season, with HC context | ✅ Collected |
 | `data/coaching/defensive_coordinator_profiles.parquet` | DC allowed-production profiles by team-season, with HC context | ✅ Collected |
-| `data/winners/` | League winner roster frequency | ⏳ Not started |
+| `data/winners/league_winner_frequency.parquet` | MFL redraft champion roster frequency 2012–2025 | ✅ Script fixed; run full collection |
+| `data/salaries/player_salaries.parquet` | nflverse/OverTheCap player salary/cap/cash by player-season 2012–2025 | ✅ Collected |
+| `data/salaries/salary_cap_by_season.parquet` | official base salary cap and aggregate salary totals by season | ✅ Collected |
 | `data/unmatched/` | PlayerResolver unmatched records for manual review | Auto-generated |
 
 ---
@@ -370,21 +398,24 @@ Project: `FR` at [aispm.atlassian.net](https://aispm.atlassian.net). Credentials
 
 | Ticket | Summary | Status |
 |--------|---------|--------|
-| FR-6 | Historical stats backfill (nflverse) | ✅ Done |
-| FR-9 | Combine & draft data | ✅ Done |
-| FR-13 | PlayerResolver utility | 🔍 Review |
-| FR-21 | Player injury history | 🔍 Review |
-| FR-16 | FantasyPros ADP scraper | 🔍 Review |
-| FR-10 | CFBD college stats | 🔄 In Progress |
-| FR-14 | Coaching scraper (HC/OC/DC) | 🔍 Review |
-| FR-15 | Coaching impact formula | 🔍 Review |
-| FR-17 | League winner frequency (Sleeper + BBM) | ⏳ Not started |
-| FR-25 | PFR 2025 season stats backfill | ⏳ Not started |
-| FR-11 | Prospect confidence score formula | ⏳ Deferred |
-| FR-23 | Docker vector DB (Qdrant) | ⏳ Not started |
-| FR-18 | Embed all data | ⏳ Blocked by all data tasks |
-| FR-20 | Go query script | ⏳ Not started |
-| FR-22 | LLM hookup | ⏳ Not started |
+| FR-6  | Historical stats backfill (nflverse)        | ✅ Done |
+| FR-9  | Combine & draft data                        | ✅ Done |
+| FR-10 | CFBD college stats                          | ✅ Done |
+| FR-13 | PlayerResolver utility                      | ✅ Done |
+| FR-14 | Coaching scraper (HC/OC/DC)                 | ✅ Done |
+| FR-15 | Coaching impact formula                     | ✅ Done |
+| FR-16 | FantasyPros ADP scraper                     | ✅ Done |
+| FR-21 | Player injury history                       | ✅ Done |
+| FR-27 | Historical player salaries                  | ✅ Done |
+| FR-17 | League winner frequency (MFL redraft)        | 🔄 In Progress — script fixed, run full collection |
+| FR-7  | PFR enrichment scraper                      | ⏳ Not started |
+| FR-8  | In-season weekly ingest (SportRadar/Sleeper)| ⏳ Not started |
+| FR-25 | PFR 2025 season stats backfill              | ⏳ Not started |
+| FR-11 | Prospect confidence score formula           | ⏳ Deferred |
+| FR-23 | Docker vector DB (Qdrant)                   | ⏳ Not started |
+| FR-18 | Embed all data                              | ⏳ Blocked by FR-17 + FR-23 |
+| FR-20 | Go query script                             | ⏳ Not started |
+| FR-22 | LLM hookup                                  | ⏳ Not started |
 
 ---
 
