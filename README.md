@@ -79,7 +79,7 @@ FR-9 (combine + draft data)
 | Data collection | Python, nfl_data_py, requests, BeautifulSoup |
 | Player identity | Python, rapidfuzz |
 | Vector store | Qdrant (Docker) |
-| Embedding | Python (model TBD at FR-18 kickoff) |
+| Embedding | Python, nomic-embed-text via Ollama (768 dims) |
 | Retrieval | Go |
 | LLM | Anthropic Claude or OpenAI (TBD at FR-22 kickoff) |
 
@@ -381,11 +381,11 @@ All Parquet files are gitignored — large and reproducible from collection scri
 | `data/athletic/combine_draft.parquet` | Combine measurables + draft data 2000–2025 | ✅ Collected |
 | `data/injuries/YYYY.parquet` | Weekly injury designations 2012–2025 | ✅ Collected |
 | `data/adp/adp_historical.parquet` | FantasyPros ADP std/PPR/half-PPR 2012–2025 | ✅ Collected |
-| `data/athletic/college_stats.parquet` | CFBD college stats by player × season | ⏳ Pending first run |
+| `data/athletic/college_stats.parquet` | CFBD college stats by player × season | ✅ Collected |
 | `data/coaching/coaching_weekly.parquet` | HC/OC/DC per team-week, including interim changes | ✅ Collected |
 | `data/coaching/offensive_coordinator_profiles.parquet` | OC offensive tendency profiles by team-season, with HC context | ✅ Collected |
 | `data/coaching/defensive_coordinator_profiles.parquet` | DC allowed-production profiles by team-season, with HC context | ✅ Collected |
-| `data/winners/league_winner_frequency.parquet` | MFL redraft champion roster frequency 2012–2025 | ✅ Script fixed; run full collection |
+| `data/winners/league_winner_frequency.parquet` | MFL redraft champion roster frequency 2012–2025 | ⚠️ Collected — ~20 leagues/season sampled; 500-league acceptance criteria not met |
 | `data/salaries/player_salaries.parquet` | nflverse/OverTheCap player salary/cap/cash by player-season 2012–2025 | ✅ Collected |
 | `data/salaries/salary_cap_by_season.parquet` | official base salary cap and aggregate salary totals by season | ✅ Collected |
 | `data/unmatched/` | PlayerResolver unmatched records for manual review | Auto-generated |
@@ -407,13 +407,13 @@ Project: `FR` at [aispm.atlassian.net](https://aispm.atlassian.net). Credentials
 | FR-16 | FantasyPros ADP scraper                     | ✅ Done |
 | FR-21 | Player injury history                       | ✅ Done |
 | FR-27 | Historical player salaries                  | ✅ Done |
-| FR-17 | League winner frequency (MFL redraft)        | 🔄 In Progress — script fixed, run full collection |
+| FR-17 | League winner frequency (MFL redraft)        | ⚠️ In Progress — ~20 leagues/season; 500-league AC not met; data access unresolved |
 | FR-7  | PFR enrichment scraper                      | ⏳ Not started |
 | FR-8  | In-season weekly ingest (SportRadar/Sleeper)| ⏳ Not started |
-| FR-25 | PFR 2025 season stats backfill              | ⏳ Not started |
+| FR-25 | nflverse 2026 backfill (2025 collected; parked until nflverse publishes 2026) | ⏳ Parked |
 | FR-11 | Prospect confidence score formula           | ⏳ Deferred |
-| FR-23 | Docker vector DB (Qdrant)                   | ⏳ Not started |
-| FR-18 | Embed all data                              | ⏳ Blocked by FR-17 + FR-23 |
+| FR-23 | Docker vector DB (Qdrant)                   | ✅ Done |
+| FR-18 | Embed all data                              | 🔄 In Progress |
 | FR-20 | Go query script                             | ⏳ Not started |
 | FR-22 | LLM hookup                                  | ⏳ Not started |
 
