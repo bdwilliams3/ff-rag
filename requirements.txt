@@ -4,3 +4,4 @@ pyarrow
 rapidfuzz
 requests
 beautifulsoup4
+fastembed
