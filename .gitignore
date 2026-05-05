@@ -59,3 +59,6 @@ logs/
 
 # nfl_data_py cache
 /nfl_data/
+
+# jira board updates
+JIRA.md
