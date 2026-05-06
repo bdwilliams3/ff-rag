@@ -31,7 +31,7 @@ from openai import OpenAI
 EMBEDDING_MODEL = "BAAI/bge-small-en"
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 DEFAULT_COLLECTION = "ff-rag-v1"
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
 

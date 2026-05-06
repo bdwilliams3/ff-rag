@@ -26,6 +26,7 @@ DATA_SOURCE_GUIDE = {
     "injuries": "aggregated injury report history by player-season",
     "adp": "FantasyPros draft cost by season and scoring format",
     "coaching_weekly": "team-week head coach and coordinator assignments",
+    "current_coaching_staff": "current HC/OC assignments with links to historical OC tendency profiles",
     "offensive_coordinator_profiles": "team-season offensive tendencies under an OC",
     "defensive_coordinator_profiles": "team-season production allowed under a DC",
     "player_salaries": "salary, cap, and team investment by player-season",
@@ -215,7 +216,10 @@ Rules:
 
     def _augment_filters_for_projection(self, query: str, filters: QueryFilters) -> QueryFilters:
         if self.projections.is_rookie_question(query):
-            source = filters.source or "combine_draft,college_stats,adp"
+            source = filters.source or "combine_draft,college_stats,adp,current_coaching_staff"
+            q = query.lower()
+            if not filters.source and any(token in q for token in ["coordinator", "oc", "wr2", "wr3", "number 2", "number 3"]):
+                source = "combine_draft,college_stats,current_coaching_staff,offensive_coordinator_profiles"
             return QueryFilters(
                 position=filters.position,
                 season_min=filters.season_min,

@@ -11,7 +11,8 @@ import requests
 
 
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-2.0-flash-lite"]
+GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash-lite", "gemini-flash-latest"]
+RETIRED_GEMINI_MODELS = {"gemini-2.0-flash-lite"}
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 SYSTEM_PROMPT = """\
@@ -39,7 +40,12 @@ def call_llm(prompt: str) -> dict[str, Any]:
         },
     }
     configured_model = os.getenv("GEMINI_MODEL")
-    models = [configured_model] if configured_model else [GEMINI_MODEL, *GEMINI_FALLBACK_MODELS]
+    candidates = [configured_model, GEMINI_MODEL, *GEMINI_FALLBACK_MODELS]
+    models = []
+    for model in candidates:
+        if not model or model in RETIRED_GEMINI_MODELS or model in models:
+            continue
+        models.append(model)
     last_error = None
     response = None
     for model in models:

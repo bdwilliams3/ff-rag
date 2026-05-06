@@ -24,10 +24,14 @@ import pandas as pd
 
 COACHING_PATH = Path("data/coaching/coaching_weekly.parquet")
 WEEKLY_STATS_DIR = Path("data/stats/weekly")
+SCHEDULE_DIR = Path("data/schedule")
 OFFENSE_OUT_PATH = Path("data/coaching/offensive_coordinator_profiles.parquet")
 DEFENSE_OUT_PATH = Path("data/coaching/defensive_coordinator_profiles.parquet")
 OFFENSE_OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 AUTO_CONFIRM = "--auto-confirm" in sys.argv
+TEAM_ALIASES = {
+    "LAR": "LA",
+}
 
 
 def confirm(prompt: str) -> None:
@@ -47,8 +51,85 @@ def load_weekly_stats() -> pd.DataFrame:
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
+def load_schedule_matchups(seasons: list[int]) -> pd.DataFrame:
+    """
+    Return one row per team-game with team/opponent_team.
+
+    Older weekly-stat files include opponent_team already, but newer nflverse
+    weekly exports may leave it null. The schedule is the authoritative way to
+    recover the opponent and build defensive-allowed profiles.
+    """
+    cached = []
+    missing = []
+    for season in seasons:
+        path = SCHEDULE_DIR / f"nfl_schedule_{season}.parquet"
+        if path.exists():
+            df = pd.read_parquet(path)
+            if {"season", "week", "team", "opponent_team"}.issubset(df.columns):
+                cached.append(df[["season", "week", "team", "opponent_team"]])
+                continue
+        missing.append(season)
+
+    fetched = []
+    if missing:
+        try:
+            import nfl_data_py as nfl
+        except ImportError as exc:
+            raise RuntimeError(
+                "Missing opponent_team values and nfl_data_py is unavailable; "
+                "install nfl-data-py or provide data/schedule/nfl_schedule_<season>.parquet"
+            ) from exc
+
+        schedules = nfl.import_schedules(missing)
+        schedules = schedules[schedules["game_type"] == "REG"].copy()
+        home = schedules[["season", "week", "home_team", "away_team"]].rename(
+            columns={"home_team": "team", "away_team": "opponent_team"}
+        )
+        away = schedules[["season", "week", "away_team", "home_team"]].rename(
+            columns={"away_team": "team", "home_team": "opponent_team"}
+        )
+        fetched.append(pd.concat([home, away], ignore_index=True))
+
+    if not cached and not fetched:
+        return pd.DataFrame(columns=["season", "week", "team", "opponent_team"])
+
+    matchups = pd.concat(cached + fetched, ignore_index=True).drop_duplicates()
+    for col in ["team", "opponent_team"]:
+        matchups[col] = matchups[col].replace(TEAM_ALIASES)
+    return matchups
+
+
+def hydrate_missing_opponents(df: pd.DataFrame) -> pd.DataFrame:
+    if "opponent_team" not in df.columns:
+        df["opponent_team"] = pd.NA
+
+    missing_mask = df["opponent_team"].isna()
+    if not missing_mask.any():
+        return df
+
+    seasons = sorted(df.loc[missing_mask, "season"].dropna().astype(int).unique().tolist())
+    matchups = load_schedule_matchups(seasons)
+    if matchups.empty:
+        return df
+
+    matchups = matchups.rename(
+        columns={"team": "recent_team", "opponent_team": "scheduled_opponent_team"}
+    )
+    hydrated = df.merge(matchups, on=["season", "week", "recent_team"], how="left")
+    fill_mask = hydrated["opponent_team"].isna() & hydrated["scheduled_opponent_team"].notna()
+    filled = int(fill_mask.sum())
+    if filled:
+        print(f"Hydrated {filled:,} missing opponent_team values from schedule matchups.")
+    hydrated.loc[fill_mask, "opponent_team"] = hydrated.loc[fill_mask, "scheduled_opponent_team"]
+    return hydrated.drop(columns=["scheduled_opponent_team"])
+
+
 def prep_stats(stats: pd.DataFrame) -> pd.DataFrame:
     df = stats[stats["season_type"] == "REG"].copy()
+    for col in ["recent_team", "opponent_team"]:
+        if col in df.columns:
+            df[col] = df[col].replace(TEAM_ALIASES)
+    df = hydrate_missing_opponents(df)
     numeric_cols = [
         "attempts", "passing_yards", "carries", "rushing_yards",
         "targets", "receptions", "receiving_yards",

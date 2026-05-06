@@ -6,7 +6,7 @@ A local fantasy football AI you can ask anything: who to draft, who to start, wh
 
 ## What This Does
 
-It builds a searchable knowledge base from 13 years of NFL data (stats, ADP, coaching tendencies, injury history, college production, salaries, combine measurables), stores it in a local vector database, and lets you ask natural-language questions answered by Gemini with that data as context.
+It builds a searchable knowledge base from NFL data (stats, ADP, coaching history, current coaching staff, coordinator tendencies, injury history, college production, salaries, combine measurables), stores it in a local vector database, and lets you ask natural-language questions answered by Gemini with that data as context.
 
 **Example questions it can answer:**
 - *"Which WRs have the best early-season schedule and are still available in the 5th round?"*
@@ -85,6 +85,7 @@ Create a `.env` file in the project root with your two keys:
 cat > .env << 'EOF'
 CFBD_API_KEY=your_cfbd_key_here
 GEMINI_API_KEY=your_gemini_key_here
+GEMINI_MODEL=gemini-2.5-flash
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION=ff-rag-v1
 EOF
@@ -94,6 +95,7 @@ Or create the file manually — it should look exactly like this:
 ```
 CFBD_API_KEY=DoKxb...
 GEMINI_API_KEY=AIzaSy...
+GEMINI_MODEL=gemini-2.5-flash
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION=ff-rag-v1
 ```
@@ -208,7 +210,7 @@ Output: `data/coaching/coaching_weekly.parquet` (~7,800 rows)
 ---
 
 ### 6g — Coordinator Tendency Profiles
-*Aggregates coaching data into per-coordinator offensive and defensive tendency profiles (pass rate, target share splits, yards allowed, etc.).*
+*Aggregates coaching data into per-coordinator offensive and defensive tendency profiles (pass rate, target share splits, yards allowed, etc.). Defensive profiles are built as the inverse of offensive weekly production; when weekly stats are missing `opponent_team`, the builder hydrates matchups from the NFL schedule. These are historical tendency profiles, not current staff assignments.*
 ```bash
 python scripts/build_coordinator_profiles.py --auto-confirm
 ```
@@ -218,7 +220,22 @@ Output:
 
 ---
 
-### 6h — Player Salaries & Cap Data
+### 6h — Current Coaching Staff
+*Collects current HC/OC destinations and links each current coach back to local historical OC tendency rows when they exist. This prevents stale tendency rows from being treated as current landing-spot context.*
+```bash
+python scripts/collect_current_coaching_staff.py
+```
+Output:
+- `data/coaching/current_coaching_staff.parquet`
+
+Important distinction:
+- `current_coaching_staff` answers **who is currently on each staff**.
+- `offensive_coordinator_profiles` answers **what a coach/team did historically**.
+- Current staff rows include historical profile counts, seasons, teams, and average pass/run/target-share tendencies for the current HC and OC when those coaches have local historical OC profile rows.
+
+---
+
+### 6i — Player Salaries & Cap Data
 *Contract values, guaranteed money, and cap hits, 2012–2025.*
 ```bash
 python scripts/collect_salaries.py --auto-confirm
@@ -229,7 +246,7 @@ Output:
 
 ---
 
-### 6i — 2025 Season Data
+### 6j — 2025 Season Data
 *Specialized collection and derived metrics for the current season.*
 ```bash
 python scripts/collect_stats_2025.py --auto-confirm
@@ -296,6 +313,7 @@ python scripts/ask.py --season-min 2022 "who has the most consistent target shar
 
 # Search a specific data source
 python scripts/ask.py --source offensive_coordinator_profiles "which OCs run the most pass-heavy schemes?"
+python scripts/ask.py --source current_coaching_staff "who is the current Saints offensive coordinator?"
 python scripts/ask.py --source defensive_coordinator_profiles "which defenses are easiest to stream against?"
 
 # See what data fed the answer
@@ -315,6 +333,7 @@ Available `--source` values:
 | `injuries` | Injury history and designations |
 | `adp` | Historical average draft position |
 | `coaching_weekly` | Weekly HC/OC/DC assignments |
+| `current_coaching_staff` | Current HC/OC destinations with links to historical OC tendency rows |
 | `offensive_coordinator_profiles` | OC pass rate, target share splits |
 | `defensive_coordinator_profiles` | DC yards/TDs allowed by position |
 | `player_salaries` | Contract values and cap hits |
@@ -362,6 +381,35 @@ python scripts/embed.py --provider fastembed-bge
 
 ---
 
+## Running the Chat App
+
+The browser UI is served by FastAPI. Do not open `app/static/index.html` directly with `file://`; that bypasses the API.
+
+```bash
+export $(grep -v '^#' .env | xargs)
+.venv/bin/uvicorn app.server:app --host 127.0.0.1 --port 8081
+```
+
+Open:
+```text
+http://127.0.0.1:8081
+```
+
+Useful health check:
+```bash
+curl http://127.0.0.1:8081/api/health
+```
+
+The app has deterministic helper context for 2026 rookie QB/RB/WR/TE questions. Current-state retrieval now includes `current_coaching_staff`, while the deterministic helpers are being refactored to weight current HC first and current OC second. The intended data split is:
+- live `nfl_data_py` 2026 draft/combine feeds for current rookie draft status and testing
+- `college_stats` for matched college production
+- `current_coaching_staff` for current HC/OC destinations
+- `offensive_coordinator_profiles` only as historical tendency evidence linked to current coaches
+
+If current staff is missing or stale, the app should say so rather than recycling an old team coordinator profile as current context.
+
+---
+
 ## Data Sources
 
 | Data | Source | API Key? |
@@ -372,6 +420,7 @@ python scripts/embed.py --provider fastembed-bge
 | College stats | collegefootballdata.com | **Yes (free)** |
 | ADP history | FantasyPros (scraped) | No |
 | Coaching staff history | Pro Football History (scraped) | No |
+| Current coaching staff | Public current NFL HC/OC lists with source URLs retained | No |
 | Player salaries | nflverse/OverTheCap | No |
 | LLM answers | Google Gemini | **Yes (free tier)** |
 | Vector storage | Qdrant (local Docker) | No |
