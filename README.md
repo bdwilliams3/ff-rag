@@ -20,10 +20,10 @@ It builds a searchable knowledge base from NFL data (stats, ADP, coaching histor
 
 You need three things installed before starting:
 
-### 1. Python 3.9 or newer
+### 1. Python 3.13
 Check if you have it:
 ```bash
-python3 --version
+python3.13 --version
 ```
 If not, download from [python.org](https://www.python.org/downloads/).
 
@@ -106,7 +106,7 @@ QDRANT_COLLECTION=ff-rag-v1
 
 ```bash
 # Create a virtual environment
-python3 -m venv .venv
+python3.13 -m venv .venv
 
 # Activate it
 # On Mac/Linux:
@@ -115,8 +115,12 @@ source .venv/bin/activate
 .venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+pip install --no-deps -r requirements.txt
 ```
+
+That `--no-deps` bit matters because `nfl-data-py==0.3.3` has stale metadata declaring `numpy<2` and `pandas<2`, which conflicts with Python 3.13 wheels. The frozen environment works, but normal resolver mode would fail.
+
+This repo also includes `.python-version` with `3.13.13` so tools such as pyenv can select the expected Python version automatically.
 
 > **Note:** You'll see the model files download the first time you run embed.py (~130MB for BAAI/bge-small-en). This is a one-time download.
 
